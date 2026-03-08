@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
-import { X, Plus, Trash2, Edit2, Check, Globe, Bot, Save } from 'lucide-react'
+import { useState, useEffect, memo } from 'react'
+import { X, Plus, Trash2, Edit2, Check, Globe, Bot, Save, Star } from 'lucide-react'
 import { Modal, IconButton } from './ui'
+import { saveSelectedLanguage } from '../utils/storage'
 import type { AIProviderConfig, Language } from '../types'
 
 interface SettingsModalProps {
@@ -26,11 +27,13 @@ const emptyProviderForm: ProviderFormData = {
   apiKey: '',
 }
 
-export default function SettingsModal({ show, onClose, onProviderChange, onLanguageChange }: SettingsModalProps) {
+function SettingsModal({ show, onClose, onProviderChange, onLanguageChange }: SettingsModalProps) {
   const [tab, setTab] = useState<Tab>('providers')
+  const [transitioning, setTransitioning] = useState(false)
   const [providers, setProviders] = useState<AIProviderConfig[]>([])
   const [languages, setLanguages] = useState<Language[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState('')
+  const [selectedLanguageCode, setSelectedLanguageCode] = useState('')
   
   const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null)
   const [providerForm, setProviderForm] = useState<ProviderFormData>(emptyProviderForm)
@@ -53,6 +56,7 @@ export default function SettingsModal({ show, onClose, onProviderChange, onLangu
       setProviders(settings.providers || [])
       setLanguages(settings.languages || [])
       setSelectedProviderId(settings.selectedProviderId || '')
+      setSelectedLanguageCode(settings.selectedLanguageCode || settings.languages?.[0]?.code || '')
     }
   }
 
@@ -145,29 +149,41 @@ export default function SettingsModal({ show, onClose, onProviderChange, onLangu
     setShowLanguageForm(true)
   }
 
+  const handleSetDefaultLanguage = (code: string) => {
+    setSelectedLanguageCode(code)
+    saveSelectedLanguage(code)
+  }
+
+  const handleTabChange = (newTab: Tab) => {
+    if (tab === newTab) return
+    setTransitioning(true)
+    setTimeout(() => {
+      setTab(newTab)
+      setTransitioning(false)
+    }, 150)
+  }
+
   return (
     <Modal show={show} onClose={onClose} width="w-[90%] max-w-[400px]" maxHeight="max-h-[80vh]">
       <div className="flex items-center justify-between p-4 border-b border-white/5">
         <div className="flex gap-4">
-          <button
-            onClick={() => setTab('providers')}
-            className={`flex items-center gap-2 text-[14px] font-sans font-semibold transition-colors ${tab === 'providers' ? 'text-accent' : 'text-textSecondary'}`}
-          >
-            <Bot size={16} />
-            Models
-          </button>
-          <button
-            onClick={() => setTab('languages')}
-            className={`flex items-center gap-2 text-[14px] font-sans font-semibold transition-colors ${tab === 'languages' ? 'text-accent' : 'text-textSecondary'}`}
-          >
-            <Globe size={16} />
-            Languages
-          </button>
-        </div>
+        <button
+          onClick={() => handleTabChange('providers')}
+          className={`flex items-center gap-2 text-[14px] font-sans font-semibold transition-colors ${tab === 'providers' ? 'text-accent' : 'text-textSecondary'}`}
+        >
+          <Bot size={16} /> Models
+        </button>
+        <button
+          onClick={() => handleTabChange('languages')}
+          className={`flex items-center gap-2 text-[14px] font-sans font-semibold transition-colors ${tab === 'languages' ? 'text-accent' : 'text-textSecondary'}`}
+        >
+          <Globe size={16} /> Languages
+        </button>
+      </div>
         <IconButton icon={<X size={20} />} onClick={onClose} size="sm" enableHaptic={false} />
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className={`flex-1 overflow-y-auto p-3 transition-opacity duration-150 ${transitioning ? 'opacity-0' : 'opacity-100'}`}>
         {tab === 'providers' && (
           <div className="space-y-2">
             {providers.map(provider => (
@@ -238,20 +254,29 @@ export default function SettingsModal({ show, onClose, onProviderChange, onLangu
           </div>
         )}
 
-        {tab === 'languages' && (
-          <div className="space-y-2">
-            {languages.map(language => (
+      {tab === 'languages' && (
+        <div className="space-y-2">
+          {languages.map(language => {
+            const isDefault = selectedLanguageCode === language.code
+            return (
               <div key={language.code} className="flex items-center justify-between p-3 rounded-xl bg-white/5">
                 <div className="flex items-center gap-2">
                   <span className="text-[15px] font-sans text-white">{language.name}</span>
                   {language.rtl && <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent font-sans">RTL</span>}
+                  {isDefault && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 font-sans">Default</span>}
                 </div>
                 <div className="flex gap-1">
+                  <IconButton
+                    icon={<Star size={14} fill={isDefault ? 'currentColor' : 'none'} className={isDefault ? 'text-yellow-400' : ''} />}
+                    onClick={() => handleSetDefaultLanguage(language.code)}
+                    size="sm"
+                  />
                   <IconButton icon={<Edit2 size={14} />} onClick={() => startEditLanguage(language)} size="sm" />
                   <IconButton icon={<Trash2 size={14} />} onClick={() => handleDeleteLanguage(language.code)} size="sm" />
                 </div>
               </div>
-            ))}
+            )
+          })}
 
           {showLanguageForm ? (
             <div className="p-3 rounded-xl bg-white/5 space-y-3">
@@ -301,3 +326,5 @@ export default function SettingsModal({ show, onClose, onProviderChange, onLangu
     </Modal>
   )
 }
+
+export default memo(SettingsModal)

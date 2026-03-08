@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactElement } from 'react'
-import { cloneElement } from 'react'
+import { Children, isValidElement } from 'react'
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon: ReactElement
@@ -32,19 +32,24 @@ export function IconButton({
 }: IconButtonProps) {
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (disabled) return
-    
+
     if (enableHaptic) {
       navigator.vibrate?.(10)
     }
-    
+
     if (onClick) {
       onClick(e)
     }
   }
 
-  const iconWithProps = cloneElement(icon, {
-    className: `${icon.props.className || ''} ${iconSizeClasses[size]} text-textSecondary transition-colors group-active:text-white`,
-  })
+  const child = Children.only(icon)
+  const iconElement = isValidElement(child)
+    ? (
+      <span className={`${iconSizeClasses[size]} text-textSecondary transition-colors group-active:text-white flex items-center justify-center`}>
+        {child}
+      </span>
+    )
+    : null
 
   return (
     <button
@@ -61,7 +66,7 @@ export function IconButton({
       `}
       {...props}
     >
-      {iconWithProps}
+      {iconElement}
     </button>
   )
 }

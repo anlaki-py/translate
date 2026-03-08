@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Check } from 'lucide-react'
 import { Modal } from './ui'
 import type { Language } from '../types'
@@ -10,7 +11,7 @@ interface LanguageModalProps {
   onClose: () => void
 }
 
-export default function LanguageModal({ languages, selectedLang, show, onSelect, onClose }: LanguageModalProps) {
+function LanguageModal({ languages, selectedLang, show, onSelect, onClose }: LanguageModalProps) {
   return (
     <Modal show={show} onClose={onClose}>
       <div className="p-4 text-center font-sans font-semibold text-[13px] text-textSecondary uppercase tracking-widest border-b border-white/5">
@@ -37,3 +38,5 @@ export default function LanguageModal({ languages, selectedLang, show, onSelect,
     </Modal>
   )
 }
+
+export default memo(LanguageModal)

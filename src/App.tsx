@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { Undo2, Redo2, X, Copy, Settings } from 'lucide-react'
 import Typewriter from './components/Typewriter'
 import ThinkingState from './components/ThinkingState'
@@ -14,7 +14,7 @@ const RTL_REGEX = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/
 
 const getDir = (text: string): 'rtl' | 'ltr' => RTL_REGEX.test(text) ? 'rtl' : 'ltr'
 
-export default function App() {
+function App() {
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
   const [selectedLang, setSelectedLang] = useState<Language>(getActiveLanguage())
@@ -35,6 +35,7 @@ export default function App() {
   const containerHeightRef = useRef(0)
   const hasSnappedRef = useRef(false)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rafRef = useRef<number | null>(null)
 
   const performTranslation = async (text: string, targetLang: Language) => {
     if (!text.trim()) {
@@ -81,25 +82,26 @@ export default function App() {
     }
   }, [input, selectedLang, activeProvider])
 
-  const goBack = () => {
+  const goBack = useCallback(() => {
     if (historyIndex <= 0) return
     const entry = history[historyIndex - 1]
     setHistoryIndex(historyIndex - 1)
     setInput(entry.input)
     setOutput(entry.output)
     setSelectedLang(entry.lang)
-  }
+  }, [historyIndex, history])
 
-  const goForward = () => {
+  const goForward = useCallback(() => {
     if (historyIndex >= history.length - 1) return
     const entry = history[historyIndex + 1]
     setHistoryIndex(historyIndex + 1)
     setInput(entry.input)
     setOutput(entry.output)
     setSelectedLang(entry.lang)
-  }
+  }, [historyIndex, history])
 
   const onTouchStartResize = (e: React.TouchEvent) => {
+    e.preventDefault()
     dragStartY.current = e.touches[0].clientY
     const inRect = inputSectionRef.current?.getBoundingClientRect()
     const outRect = outputSectionRef.current?.getBoundingClientRect()
@@ -109,47 +111,71 @@ export default function App() {
   }
 
   const onTouchMoveResize = (e: React.TouchEvent) => {
-    const deltaY = e.touches[0].clientY - dragStartY.current
-    const newInputH = Math.max(100, startHeights.current.input + deltaY)
-    const newOutputH = Math.max(120, startHeights.current.output - deltaY)
-    const midPoint = containerHeightRef.current / 2
+    e.preventDefault()
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    
+    rafRef.current = requestAnimationFrame(() => {
+      const deltaY = e.touches[0].clientY - dragStartY.current
+      const newInputH = Math.max(100, startHeights.current.input + deltaY)
+      const newOutputH = Math.max(120, startHeights.current.output - deltaY)
+      const midPoint = containerHeightRef.current / 2
 
-    if (Math.abs(newInputH - midPoint) < 25) {
-      if (!hasSnappedRef.current) {
-        navigator.vibrate?.(15)
-        hasSnappedRef.current = true
+      if (Math.abs(newInputH - midPoint) < 25) {
+        if (!hasSnappedRef.current) {
+          navigator.vibrate?.(15)
+          hasSnappedRef.current = true
+        }
+        if (inputSectionRef.current) inputSectionRef.current.style.flex = '0 0 50%'
+        if (outputSectionRef.current) outputSectionRef.current.style.flex = '0 0 50%'
+      } else {
+        hasSnappedRef.current = false
+        if (inputSectionRef.current) inputSectionRef.current.style.flex = `0 0 ${newInputH}px`
+        if (outputSectionRef.current) outputSectionRef.current.style.flex = `0 0 ${newOutputH}px`
       }
-      if (inputSectionRef.current) inputSectionRef.current.style.flex = '0 0 50%'
-      if (outputSectionRef.current) outputSectionRef.current.style.flex = '0 0 50%'
-    } else {
-      hasSnappedRef.current = false
-      if (inputSectionRef.current) inputSectionRef.current.style.flex = `0 0 ${newInputH}px`
-      if (outputSectionRef.current) outputSectionRef.current.style.flex = `0 0 ${newOutputH}px`
-    }
+    })
   }
 
-  const handleSelectLang = (lang: Language) => {
+  const handleSelectLang = useCallback((lang: Language) => {
     setSelectedLang(lang)
     setShowModal(false)
-  }
+  }, [])
 
-  const handleProviderChange = (provider: AIProviderConfig) => {
+  const handleProviderChange = useCallback((provider: AIProviderConfig) => {
     setActiveProvider(provider)
-  }
+  }, [])
 
-  const handleLanguageChange = () => {
+  const handleLanguageChange = useCallback(() => {
     const newLanguages = getActiveLanguages()
     const newActiveLang = getActiveLanguage()
     setLanguages(newLanguages)
     setSelectedLang(newActiveLang)
-  }
+  }, [])
+
+  const inputTextDir = useMemo(() => getDir(input), [input])
+  const outputTextDir = getLangDir(selectedLang)
+
+  const handleCloseModal = useCallback(() => setShowModal(false), [])
+  const handleCloseSettings = useCallback(() => setShowSettings(false), [])
+  const handleClear = useCallback(() => {
+    setInput('')
+    setOutput('')
+    inputTextAreaRef.current?.focus()
+  }, [])
+  const handleCopyInput = useCallback(() => {
+    navigator.clipboard.writeText(input)
+  }, [input])
+  const handleCopyOutput = useCallback(async () => {
+    if (output) await navigator.clipboard.writeText(output)
+  }, [output])
+  const handleOpenModal = useCallback(() => setShowModal(true), [])
+  const handleOpenSettings = useCallback(() => setShowSettings(true), [])
 
   return (
     <div className="flex flex-col h-screen max-h-[100dvh] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] relative overflow-hidden font-mono text-white">
 
       <div
         ref={mainContentRef}
-      className={`glass-edge flex-1 flex flex-col rounded-[32px] overflow-hidden transition-all duration-300 mx-0 my-3 relative z-10 ${
+        className={`glass-edge flex-1 flex flex-col rounded-[32px] overflow-hidden transition-opacity duration-300 transition-transform duration-300 mx-0 my-3 relative z-10 ${
         showModal || showSettings ? 'opacity-50 scale-95 pointer-events-none' : ''
       }`}
         style={{
@@ -167,41 +193,35 @@ export default function App() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Enter text…"
-            className="w-full h-full bg-transparent border-none outline-none text-[21px] p-6 pb-[100px] resize-none text-white placeholder-textSecondary/60 mask-input font-mono leading-relaxed"
-            style={{
-              direction: getDir(input),
-              textAlign: getDir(input) === 'rtl' ? 'right' : 'left',
-            }}
+          className="w-full h-full bg-transparent border-none outline-none text-[21px] p-6 pb-[100px] resize-none text-white placeholder-textSecondary/60 mask-input font-mono leading-relaxed"
+          style={{
+            direction: inputTextDir,
+            textAlign: inputTextDir === 'rtl' ? 'right' : 'left',
+          }}
           />
 
           <div className="absolute left-6 right-6 bottom-5 flex justify-between items-center z-10 pointer-events-none">
-            <div className="flex gap-3 pointer-events-auto">
-              <IconButton icon={<Undo2 />} onClick={goBack} />
-              <IconButton icon={<Redo2 />} onClick={goForward} />
-            </div>
+        <div className="flex gap-3 pointer-events-auto">
+          <IconButton icon={<Undo2 />} onClick={goBack} />
+          <IconButton icon={<Redo2 />} onClick={goForward} />
+        </div>
 
-            <div className="flex gap-3 pointer-events-auto">
-              <IconButton 
-                icon={<X />} 
-                onClick={() => { setInput(''); setOutput(''); inputTextAreaRef.current?.focus() }} 
-              />
-              <IconButton 
-                icon={<Copy />} 
-                onClick={() => navigator.clipboard.writeText(input)} 
-              />
+        <div className="flex gap-3 pointer-events-auto">
+          <IconButton icon={<X />} onClick={handleClear} />
+          <IconButton icon={<Copy />} onClick={handleCopyInput} />
             </div>
           </div>
         </div>
 
-        <div className="h-[1px] bg-white/5 relative z-20 flex-shrink-0">
-          <div
-            className="absolute -top-4 -bottom-4 left-0 right-0 z-30 flex items-center justify-center cursor-row-resize active:scale-y-110"
-            onTouchStart={onTouchStartResize}
-            onTouchMove={onTouchMoveResize}
-          >
-            <div className="w-10 h-1 bg-[#3a3a3c] rounded-full shadow-sm transition-all active:bg-accent active:w-12 active:h-[5px]" />
-          </div>
+      <div className="h-[1px] bg-white/5 relative z-20 flex-shrink-0">
+        <div
+          className="absolute -top-4 -bottom-4 left-0 right-0 z-30 flex items-center justify-center cursor-row-resize active:scale-y-110 touch-none"
+          onTouchStart={onTouchStartResize}
+          onTouchMove={onTouchMoveResize}
+        >
+          <div className="w-10 h-1 bg-[#3a3a3c] rounded-full shadow-sm transition-all active:bg-accent active:w-12 active:h-[5px]" />
         </div>
+      </div>
 
         <div
           ref={outputSectionRef}
@@ -209,10 +229,10 @@ export default function App() {
         >
           <div
             className="w-full h-full p-6 pt-6 pb-[100px] text-[22px] leading-relaxed overflow-y-auto whitespace-pre-wrap break-words mask-output"
-            style={{
-              direction: getLangDir(selectedLang),
-              textAlign: getLangDir(selectedLang) === 'rtl' ? 'right' : 'left',
-            }}
+          style={{
+            direction: outputTextDir,
+            textAlign: outputTextDir === 'rtl' ? 'right' : 'left',
+          }}
             onDoubleClick={() => { if (output && !isLoading) { setInput(output) } }}
           >
             {isLoading ? <ThinkingState /> : <Typewriter text={output} />}
@@ -220,29 +240,29 @@ export default function App() {
         </div>
 
         <div className="absolute bottom-5 left-0 right-0 h-[54px] flex items-center justify-center z-50 pointer-events-none">
-          <button
-            onClick={() => setShowModal(true)}
-            className="pointer-events-auto relative glass-edge h-[54px] px-8 rounded-full flex items-center justify-center shadow-2xl active:scale-95 transition-transform z-10 min-w-[180px]"
-          >
-            <span className="text-[16px] font-sans font-semibold tracking-wide text-white">
-              {selectedLang.name}
-            </span>
-          </button>
+        <button
+          onClick={handleOpenModal}
+          className="pointer-events-auto relative glass-edge h-[54px] px-8 rounded-full flex items-center justify-center shadow-2xl active:scale-95 transition-transform z-10 min-w-[180px]"
+        >
+          <span className="text-[16px] font-sans font-semibold tracking-wide text-white">
+            {selectedLang.name}
+          </span>
+        </button>
 
-          <div className="absolute left-6 flex gap-3 pointer-events-auto">
-            <IconButton 
-              icon={<Settings />} 
-              onClick={() => setShowSettings(true)} 
-              floating 
-            />
-          </div>
-
-          <IconButton 
-            icon={<Copy />} 
-            onClick={async () => { if (output) await navigator.clipboard.writeText(output) }} 
-            floating 
-            className="absolute right-6 pointer-events-auto"
+        <div className="absolute left-6 flex gap-3 pointer-events-auto">
+          <IconButton
+            icon={<Settings />}
+            onClick={handleOpenSettings}
+            floating
           />
+        </div>
+
+        <IconButton
+          icon={<Copy />}
+          onClick={handleCopyOutput}
+          floating
+          className="absolute right-6 pointer-events-auto"
+        />
         </div>
 
       </div>
@@ -252,12 +272,12 @@ export default function App() {
         selectedLang={selectedLang}
         show={showModal}
         onSelect={handleSelectLang}
-        onClose={() => setShowModal(false)}
+        onClose={handleCloseModal}
       />
 
       <SettingsModal
         show={showSettings}
-        onClose={() => setShowSettings(false)}
+        onClose={handleCloseSettings}
         onProviderChange={handleProviderChange}
         onLanguageChange={handleLanguageChange}
       />
@@ -265,3 +285,5 @@ export default function App() {
     </div>
   )
 }
+
+export default memo(App)
